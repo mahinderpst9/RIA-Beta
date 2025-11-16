@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality, LiveSession } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { SYSTEM_INSTRUCTION } from './constants';
 import { decode, encode, decodeAudioData, createBlob } from './utils/audio';
 import type { ConversationTurn, Status } from './types';
@@ -13,7 +13,7 @@ const App: React.FC = () => {
   const [currentModelResponse, setCurrentModelResponse] = useState<string>('');
   const [currentUserInput, setCurrentUserInput] = useState<string>('');
 
-  const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+  const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -50,9 +50,7 @@ const App: React.FC = () => {
         callbacks: {
           onopen: async () => {
             setStatus('listening');
-            // FIX: Cast window to `any` to allow access to the vendor-prefixed `webkitAudioContext` for older browsers, resolving a TypeScript error.
             inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-            // FIX: Cast window to `any` to allow access to the vendor-prefixed `webkitAudioContext` for older browsers, resolving a TypeScript error.
             outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
             
             mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -118,7 +116,7 @@ const App: React.FC = () => {
                 nextStartTimeRef.current = 0;
             }
           },
-          onerror: (e: Error) => {
+          onerror: (e: ErrorEvent) => {
             console.error('Session error:', e);
             setStatus('error');
             handleStopSession();
