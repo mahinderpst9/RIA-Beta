@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Conversational Voice App",
+  "description": "Engage in real-time voice conversations with the Gemini 2.5 Native Audio (Live API). The AI assistant is configured as a friendly Zomato support agent.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
