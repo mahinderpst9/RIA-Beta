@@ -4,8 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
-    <title>Conversational Voice App</title>
+    <title>RIA Beta Test</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      .blinking-cursor {
+        animation: blink 1s step-end infinite;
+      }
+      @keyframes wave {
+        0%, 100% { transform: scaleY(0.4); }
+        20% { transform: scaleY(1.0); }
+        40% { transform: scaleY(0.4); }
+        60% { transform: scaleY(0.8); }
+        80% { transform: scaleY(0.4); }
+      }
+      .wave-bar {
+        animation: wave 1.2s ease-in-out infinite;
+      }
+    </style>
   <script type="importmap">
 {
   "imports": {
@@ -19,6 +39,6 @@
 </head>
   <body class="bg-gray-900">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>

@@ -2,16 +2,17 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { SYSTEM_INSTRUCTION } from './constants';
-import { decode, encode, decodeAudioData, createBlob } from './utils/audio';
+import { decode, decodeAudioData, createBlob } from './utils/audio';
 import type { ConversationTurn, Status } from './types';
 import { Message } from './components/Message';
-import { MicIcon, StopIcon, BotIcon, UserIcon, SpinnerIcon } from './components/icons';
+import { MicIcon, StopIcon, BotIcon, SpinnerIcon } from './components/icons';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<Status>('idle');
   const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [currentModelResponse, setCurrentModelResponse] = useState<string>('');
   const [currentUserInput, setCurrentUserInput] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -24,11 +25,57 @@ const App: React.FC = () => {
   
   const currentInputTranscriptionRef = useRef('');
   const currentOutputTranscriptionRef = useRef('');
+  const chatContainerRef = useRef<HTMLElement | null>(null);
+
+  const handleStopSession = useCallback(async () => {
+    if (sessionPromiseRef.current) {
+      try {
+        const session = await sessionPromiseRef.current;
+        session.close();
+      } catch (e) {
+        console.error('Error closing session:', e);
+      } finally {
+        sessionPromiseRef.current = null;
+      }
+    }
+  
+    scriptProcessorRef.current?.disconnect();
+    scriptProcessorRef.current = null;
+    
+    mediaStreamSourceRef.current?.disconnect();
+    mediaStreamSourceRef.current = null;
+
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+
+    if (inputAudioContextRef.current?.state !== 'closed') {
+      inputAudioContextRef.current?.close();
+    }
+    if (outputAudioContextRef.current?.state !== 'closed') {
+      outputAudioContextRef.current?.close();
+    }
+    inputAudioContextRef.current = null;
+    outputAudioContextRef.current = null;
+    
+    audioSourcesRef.current.forEach(source => source.stop());
+    audioSourcesRef.current.clear();
+    nextStartTimeRef.current = 0;
+
+    currentInputTranscriptionRef.current = '';
+    currentOutputTranscriptionRef.current = '';
+    setCurrentUserInput('');
+    setCurrentModelResponse('');
+
+    // Don't clear error message on stop, it should be cleared on start
+    setStatus('idle');
+  }, []);
+
 
   const handleStartSession = useCallback(async () => {
     if (status !== 'idle' && status !== 'error') return;
 
     setStatus('connecting');
+    setErrorMessage(null); // Clear previous errors
     setConversation([]);
     setCurrentUserInput('');
     setCurrentModelResponse('');
@@ -49,11 +96,24 @@ const App: React.FC = () => {
         },
         callbacks: {
           onopen: async () => {
-            setStatus('listening');
             inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
             outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
             
-            mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+            try {
+              mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (err) {
+              if (err instanceof DOMException && err.name === 'NotAllowedError') {
+                setErrorMessage('Microphone permission denied. Please allow microphone access in your browser settings.');
+              } else {
+                setErrorMessage('Could not access the microphone.');
+              }
+              console.error('getUserMedia error:', err);
+              setStatus('error');
+              handleStopSession();
+              return;
+            }
+            
+            setStatus('listening');
             mediaStreamSourceRef.current = inputAudioContextRef.current.createMediaStreamSource(mediaStreamRef.current);
             scriptProcessorRef.current = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
             
@@ -100,7 +160,6 @@ const App: React.FC = () => {
               const fullInput = currentInputTranscriptionRef.current;
               const fullOutput = currentOutputTranscriptionRef.current;
               
-              // Prevent adding empty turns to conversation
               if (fullInput.trim() || fullOutput.trim()) {
                 setConversation(prev => [
                   ...prev,
@@ -125,11 +184,11 @@ const App: React.FC = () => {
           },
           onerror: (e: ErrorEvent) => {
             console.error('Session error:', e);
+            setErrorMessage('An unexpected error occurred during the session.');
             setStatus('error');
             handleStopSession();
           },
           onclose: () => {
-             // Only set to idle if not already manually stopped or in an error state
             setStatus(currentStatus => {
               if (currentStatus !== 'idle' && currentStatus !== 'error') {
                 return 'idle';
@@ -142,61 +201,25 @@ const App: React.FC = () => {
 
     } catch (error) {
       console.error('Failed to start session:', error);
+      setErrorMessage('Failed to connect to the session. Please check your connection.');
       setStatus('error');
     }
-  }, [status]);
+  }, [status, handleStopSession]);
   
-  const handleStopSession = useCallback(async () => {
-    if (sessionPromiseRef.current) {
-      try {
-        const session = await sessionPromiseRef.current;
-        session.close();
-      } catch (e) {
-        console.error('Error closing session:', e);
-      } finally {
-        sessionPromiseRef.current = null;
-      }
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  
-    scriptProcessorRef.current?.disconnect();
-    scriptProcessorRef.current = null;
-    
-    mediaStreamSourceRef.current?.disconnect();
-    mediaStreamSourceRef.current = null;
-
-    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-    mediaStreamRef.current = null;
-
-    if (inputAudioContextRef.current?.state !== 'closed') {
-      inputAudioContextRef.current?.close();
-    }
-    if (outputAudioContextRef.current?.state !== 'closed') {
-      outputAudioContextRef.current?.close();
-    }
-    inputAudioContextRef.current = null;
-    outputAudioContextRef.current = null;
-    
-    audioSourcesRef.current.forEach(source => source.stop());
-    audioSourcesRef.current.clear();
-    nextStartTimeRef.current = 0;
-
-    currentInputTranscriptionRef.current = '';
-    currentOutputTranscriptionRef.current = '';
-    setCurrentUserInput('');
-    setCurrentModelResponse('');
-
-    setStatus('idle');
-  }, []);
+  }, [conversation, currentUserInput, currentModelResponse]);
 
   useEffect(() => {
     return () => {
-      // Ensure cleanup runs when the component unmounts
       handleStopSession();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleStopSession]);
 
   const getStatusText = () => {
+    if (errorMessage) return errorMessage;
     switch (status) {
       case 'idle':
         return 'Click the microphone to start the conversation';
@@ -218,13 +241,13 @@ const App: React.FC = () => {
         <p className="text-center text-gray-400">with Gemini 2.5 Native Audio</p>
       </header>
       
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+      <main ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 scroll-smooth">
         <div className="max-w-4xl mx-auto space-y-6">
           {conversation.map((turn, index) => (
             <Message key={index} speaker={turn.speaker} text={turn.text} />
           ))}
           {currentUserInput && <Message speaker="user" text={currentUserInput} isPartial={true} />}
-          {currentModelResponse && <Message speaker="model" text={currentModelResponse} isPartial={true} />}
+          {currentModelResponse && <Message speaker="model" text={currentModelResponse} isPartial={true} isSpeaking={true} />}
           
           {conversation.length === 0 && !currentUserInput && !currentModelResponse && (
              <div className="flex flex-col items-center justify-center text-center text-gray-500 pt-16">
@@ -244,6 +267,7 @@ const App: React.FC = () => {
             className={`relative flex items-center justify-center w-20 h-20 rounded-full transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-offset-gray-900
               ${status === 'listening' ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500 animate-pulse' : 'bg-cyan-500 hover:bg-cyan-600 focus:ring-cyan-400'}
               ${status === 'connecting' ? 'bg-gray-600 cursor-not-allowed' : ''}
+              ${status === 'error' ? 'bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500' : ''}
             `}
             aria-label={status === 'listening' ? 'Stop session' : 'Start session'}
           >
@@ -251,7 +275,7 @@ const App: React.FC = () => {
             {status === 'listening' && <StopIcon className="w-10 h-10 text-white" />}
             {(status === 'idle' || status === 'error') && <MicIcon className="w-10 h-10 text-white" />}
           </button>
-          <p className="text-sm text-gray-400 h-5">{getStatusText()}</p>
+          <p className={`text-sm h-5 ${status === 'error' ? 'text-yellow-400' : 'text-gray-400'}`}>{getStatusText()}</p>
         </div>
       </footer>
     </div>

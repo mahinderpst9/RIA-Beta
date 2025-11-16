@@ -20,7 +20,7 @@ export const MicIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 export const StopIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg
-    xmlns="http://www.w.org/2000/svg"
+    xmlns="http://www.w3.org/2000/svg"
     className={className}
     viewBox="0 0 24 24"
     fill="currentColor"
@@ -84,4 +84,14 @@ export const SpinnerIcon: React.FC<{ className?: string }> = ({ className }) => 
       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
     ></path>
   </svg>
+);
+
+export const SoundWaveIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <div className={`flex items-center justify-center space-x-0.5 ${className}`}>
+    <span className="w-1 h-2 bg-current rounded-full wave-bar" style={{ animationDelay: '0ms' }}></span>
+    <span className="w-1 h-3 bg-current rounded-full wave-bar" style={{ animationDelay: '150ms' }}></span>
+    <span className="w-1 h-4 bg-current rounded-full wave-bar" style={{ animationDelay: '300ms' }}></span>
+    <span className="w-1 h-3 bg-current rounded-full wave-bar" style={{ animationDelay: '450ms' }}></span>
+    <span className="w-1 h-2 bg-current rounded-full wave-bar" style={{ animationDelay: '600ms' }}></span>
+  </div>
 );
