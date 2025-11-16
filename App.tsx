@@ -5,7 +5,7 @@ import { SYSTEM_INSTRUCTION } from './constants';
 import { decode, encode, decodeAudioData, createBlob } from './utils/audio';
 import type { ConversationTurn, Status } from './types';
 import { Message } from './components/Message';
-import { MicIcon, StopIcon, BotIcon, UserIcon } from './components/icons';
+import { MicIcon, StopIcon, BotIcon, UserIcon, SpinnerIcon } from './components/icons';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<Status>('idle');
@@ -26,7 +26,7 @@ const App: React.FC = () => {
   const currentOutputTranscriptionRef = useRef('');
 
   const handleStartSession = useCallback(async () => {
-    if (status !== 'idle') return;
+    if (status !== 'idle' && status !== 'error') return;
 
     setStatus('connecting');
     setConversation([]);
@@ -97,11 +97,18 @@ const App: React.FC = () => {
             }
 
             if (message.serverContent?.turnComplete) {
-              setConversation(prev => [
-                ...prev,
-                { speaker: 'user', text: currentInputTranscriptionRef.current },
-                { speaker: 'model', text: currentOutputTranscriptionRef.current },
-              ]);
+              const fullInput = currentInputTranscriptionRef.current;
+              const fullOutput = currentOutputTranscriptionRef.current;
+              
+              // Prevent adding empty turns to conversation
+              if (fullInput.trim() || fullOutput.trim()) {
+                setConversation(prev => [
+                  ...prev,
+                  { speaker: 'user', text: fullInput },
+                  { speaker: 'model', text: fullOutput },
+                ]);
+              }
+
               currentInputTranscriptionRef.current = '';
               currentOutputTranscriptionRef.current = '';
               setCurrentUserInput('');
@@ -122,9 +129,13 @@ const App: React.FC = () => {
             handleStopSession();
           },
           onclose: () => {
-            if (status !== 'idle' && status !== 'error') {
-               setStatus('idle');
-            }
+             // Only set to idle if not already manually stopped or in an error state
+            setStatus(currentStatus => {
+              if (currentStatus !== 'idle' && currentStatus !== 'error') {
+                return 'idle';
+              }
+              return currentStatus;
+            });
           },
         },
       });
@@ -137,9 +148,14 @@ const App: React.FC = () => {
   
   const handleStopSession = useCallback(async () => {
     if (sessionPromiseRef.current) {
-      const session = await sessionPromiseRef.current;
-      session.close();
-      sessionPromiseRef.current = null;
+      try {
+        const session = await sessionPromiseRef.current;
+        session.close();
+      } catch (e) {
+        console.error('Error closing session:', e);
+      } finally {
+        sessionPromiseRef.current = null;
+      }
     }
   
     scriptProcessorRef.current?.disconnect();
@@ -151,8 +167,12 @@ const App: React.FC = () => {
     mediaStreamRef.current?.getTracks().forEach(track => track.stop());
     mediaStreamRef.current = null;
 
-    inputAudioContextRef.current?.close();
-    outputAudioContextRef.current?.close();
+    if (inputAudioContextRef.current?.state !== 'closed') {
+      inputAudioContextRef.current?.close();
+    }
+    if (outputAudioContextRef.current?.state !== 'closed') {
+      outputAudioContextRef.current?.close();
+    }
     inputAudioContextRef.current = null;
     outputAudioContextRef.current = null;
     
@@ -170,9 +190,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      if (status !== 'idle') {
-        handleStopSession();
-      }
+      // Ensure cleanup runs when the component unmounts
+      handleStopSession();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -191,8 +210,6 @@ const App: React.FC = () => {
         return '';
     }
   };
-
-  const isSessionActive = status === 'listening' || status === 'connecting';
 
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
@@ -222,15 +239,17 @@ const App: React.FC = () => {
       <footer className="p-4 bg-gray-900/80 backdrop-blur-sm border-t border-gray-700 sticky bottom-0">
         <div className="flex flex-col items-center justify-center space-y-3">
           <button
-            onClick={isSessionActive ? handleStopSession : handleStartSession}
+            onClick={status === 'listening' ? handleStopSession : handleStartSession}
             disabled={status === 'connecting'}
             className={`relative flex items-center justify-center w-20 h-20 rounded-full transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-offset-gray-900
               ${status === 'listening' ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500 animate-pulse' : 'bg-cyan-500 hover:bg-cyan-600 focus:ring-cyan-400'}
               ${status === 'connecting' ? 'bg-gray-600 cursor-not-allowed' : ''}
             `}
-            aria-label={isSessionActive ? 'Stop session' : 'Start session'}
+            aria-label={status === 'listening' ? 'Stop session' : 'Start session'}
           >
-            {isSessionActive ? <StopIcon className="w-10 h-10 text-white" /> : <MicIcon className="w-10 h-10 text-white" />}
+            {status === 'connecting' && <SpinnerIcon className="w-10 h-10 text-white animate-spin" />}
+            {status === 'listening' && <StopIcon className="w-10 h-10 text-white" />}
+            {(status === 'idle' || status === 'error') && <MicIcon className="w-10 h-10 text-white" />}
           </button>
           <p className="text-sm text-gray-400 h-5">{getStatusText()}</p>
         </div>
